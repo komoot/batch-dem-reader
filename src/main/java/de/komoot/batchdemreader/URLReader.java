@@ -78,6 +78,7 @@ public class URLReader implements AutoCloseable {
 				if(temp.exists() == false) {
 					try(InputStream in = new URL(demSourceBase, filename).openStream();
 						OutputStream out = new FileOutputStream(temp)) {
+						logger.info("Downloading {}/{}", demSourceBase, filename);
 						IOUtils.copy(new BZip2CompressorInputStream(in), out);
 					} catch(MalformedURLException e) {
 						throw new RuntimeException("Could not open source url" + filename, e);
@@ -90,7 +91,7 @@ public class URLReader implements AutoCloseable {
 				//open previously extracted file
 
 				try {
-					logger.info("Opening reader {}", temp);
+					logger.debug("Opening reader {}", temp);
 					coverage = openReader(temp);
 					openReaders.put(filename, coverage);
 				} catch(IOException e) {
