@@ -50,7 +50,7 @@ public class URLReader implements AutoCloseable {
 	 * @param c a coordinate
 	 * @return the elevation value or {@link Double#NaN} if no data is available
 	 */
-	public double getValueAt(Coordinate c) {
+	public synchronized double getValueAt(Coordinate c) {
 		GridCoverage2D coverage = findCoverage(c);
 		if(coverage == null) {
 			return Double.NaN;
