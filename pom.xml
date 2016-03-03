@@ -50,4 +50,15 @@
 		</plugins>
 	</build>
 
+	<developers>
+		<developer>
+			<id>jan</id>
+			<email>jan@komoot.de</email>
+		</developer>
+	</developers>
+
+	<scm>
+		<developerConnection>scm:git:ssh://git@github.com/komoot/batch-dem-reader.git</developerConnection>
+		<tag>HEAD</tag>
+	</scm>
 </project>
