@@ -9,7 +9,7 @@
 	</parent>
 	<groupId>de.komoot.batch-dem-reader</groupId>
 	<artifactId>batch-dem-reader</artifactId>
-	<version>1.0-SNAPSHOT</version>
+	<version>1.0</version>
 
 	<dependencies>
 		<dependency>
@@ -72,6 +72,6 @@
 
 	<scm>
 		<developerConnection>scm:git:ssh://git@github.com/komoot/batch-dem-reader.git</developerConnection>
-		<tag>batch-dem-reader-1.1</tag>
+		<tag>batch-dem-reader-1.0</tag>
 	</scm>
 </project>
