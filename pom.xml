@@ -72,6 +72,5 @@
 
 	<scm>
 		<developerConnection>scm:git:ssh://git@github.com/komoot/batch-dem-reader.git</developerConnection>
-		<tag>batch-dem-reader-1.1</tag>
 	</scm>
 </project>
