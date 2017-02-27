@@ -1,5 +1,6 @@
 package de.komoot.batchdemreader;
 
+import com.google.common.util.concurrent.Striped;
 import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.Envelope;
 import com.vividsolutions.jts.index.ItemVisitor;
@@ -13,14 +14,17 @@ import org.opengis.coverage.PointOutsideCoverageException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import javax.media.jai.Interpolation;
 import java.awt.geom.Point2D;
 import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -32,75 +36,106 @@ public class URLReader implements AutoCloseable {
 	private static final Logger logger = LoggerFactory.getLogger(URLReader.class);
 	private static final double TOLERANCE = 0.000001;
 	private final URL demSourceBase;
-	private final File demDirectory;
-	private final Map<String, GridCoverage2D> openReaders = new HashMap<>();
+	private final File cacheDirectory;
+	private final Map<String, GridCoverage2D> openReaders = new ConcurrentHashMap<>();
+	private final Striped<Lock> filenameLock = Striped.lock(1000);
 	private STRtree index = new STRtree();
 
-	public URLReader(URL demSourceBase) throws IOException {
+	/**
+	 * Creates a new reader using the given cache directory
+	 *
+	 * @param demSourceBase  source url of the DEM files
+	 * @param cacheDirectory local cache directory
+	 * @throws IOException
+	 */
+	public URLReader(URL demSourceBase, File cacheDirectory) throws IOException {
 		this.demSourceBase = demSourceBase;
-		this.demDirectory = new File(new File(System.getProperty("java.io.tmpdir")), "dem");
-		demDirectory.mkdir();
+		this.cacheDirectory = cacheDirectory;
+		this.cacheDirectory.mkdir();
+
 		try(InputStream stream = new GZIPInputStream(new URL(demSourceBase, "index.list.gz").openStream())) {
 			populateIndex(stream);
 		}
 	}
 
 	/**
+	 * Creates a new reader using the system temp directory as cache.
+	 *
+	 * @param demSourceBase source url of the DEM files
+	 * @throws IOException
+	 */
+	public URLReader(URL demSourceBase) throws IOException {
+		this(demSourceBase, new File(System.getProperty("java.io.tmpdir"), "dem"));
+	}
+
+	/**
 	 * Reads the value at the given coordinate.
+	 *
 	 * @param c a coordinate
 	 * @return the elevation value or {@link Double#NaN} if no data is available
 	 */
-	public synchronized double getValueAt(Coordinate c) {
-		GridCoverage2D coverage = findCoverage(c);
-		if(coverage == null) {
+	public double getValueAt(@Nonnull Coordinate c) {
+		String filename = getCoverageFilename(c);
+		if(filename == null) {
 			return Double.NaN;
-		} else {
-			Point2D.Double p = new Point2D.Double(c.x, c.y);
-			double[] r = new double[1];
-			try {
-				return coverage.evaluate(p, r)[0];
-			} catch(PointOutsideCoverageException e) {
-				throw new RuntimeException(String.format(Locale.US, "For %s (%s) (%f,%f): %s", coverage.getName(), coverage.getEnvelope(), c.x, c.y, e.getMessage()), e);
-			}
+		}
+
+		Lock lock = filenameLock.get(filename);
+		try {
+			lock.lock();
+			GridCoverage2D coverage = findCoverage(filename);
+			return extractValue(c, coverage);
+		} finally {
+			lock.unlock();
 		}
 	}
 
-	private GridCoverage2D findCoverage(Coordinate c) {
+	@Nullable
+	private String getCoverageFilename(@Nonnull Coordinate c) {
 		FirstEnvelopeFinder fmf = new FirstEnvelopeFinder(c);
 		index.query(new Envelope(c), fmf);
+		return fmf.getFirstMatch();
+	}
 
-		String filename = fmf.getFirstMatch();
-		if(filename != null) {
-			GridCoverage2D coverage = openReaders.get(filename);
-			if(coverage == null) {
-				String extractedFilename = filename.replace(".bz2", "");
-				File temp = new File(demDirectory, extractedFilename);
-				if(temp.exists() == false) {
-					try(InputStream in = new URL(demSourceBase, filename).openStream();
-						OutputStream out = new FileOutputStream(temp)) {
-						logger.info("Downloading {}/{}", demSourceBase, filename);
-						IOUtils.copy(new BZip2CompressorInputStream(in), out);
-					} catch(MalformedURLException e) {
-						throw new RuntimeException("Could not open source url" + filename, e);
-					} catch(FileNotFoundException e) {
-						throw new RuntimeException("Could not open temp file " + temp, e);
-					} catch(IOException e) {
-						throw new RuntimeException("Could not open or write " + filename, e);
-					}
-				}
-				//open previously extracted file
-
-				try {
-					logger.debug("Opening reader {}", temp);
-					coverage = openReader(temp);
-					openReaders.put(filename, coverage);
+	@Nonnull
+	private GridCoverage2D findCoverage(@Nonnull String filename) {
+		GridCoverage2D coverage = openReaders.get(filename);
+		if(coverage == null) {
+			String extractedFilename = filename.replace(".bz2", "");
+			File temp = new File(cacheDirectory, extractedFilename);
+			if(temp.exists() == false) {
+				try(InputStream in = new URL(demSourceBase, filename).openStream();
+					OutputStream out = new FileOutputStream(temp)) {
+					logger.info("Downloading {}/{}", demSourceBase, filename);
+					IOUtils.copy(new BZip2CompressorInputStream(in), out);
+				} catch(MalformedURLException e) {
+					throw new RuntimeException("Could not open source url" + filename, e);
+				} catch(FileNotFoundException e) {
+					throw new RuntimeException("Could not open temp file " + temp, e);
 				} catch(IOException e) {
-					throw new RuntimeException("Could not open file " + temp, e);
+					throw new RuntimeException("Could not open or write " + filename, e);
 				}
 			}
-			return coverage;
-		} else {
-			return null;
+			//open previously extracted file
+
+			try {
+				logger.debug("Opening reader {}", temp);
+				coverage = openReader(temp);
+				openReaders.put(filename, coverage);
+			} catch(IOException e) {
+				throw new RuntimeException("Could not open file " + temp, e);
+			}
+		}
+		return coverage;
+	}
+
+	private static double extractValue(@Nonnull Coordinate c, @Nonnull GridCoverage2D coverage) {
+		Point2D.Double p = new Point2D.Double(c.x, c.y);
+		double[] r = new double[1];
+		try {
+			return coverage.evaluate(p, r)[0];
+		} catch(PointOutsideCoverageException e) {
+			throw new RuntimeException(String.format(Locale.US, "For %s (%s) (%f,%f): %s", coverage.getName(), coverage.getEnvelope(), c.x, c.y, e.getMessage()), e);
 		}
 	}
 
@@ -142,33 +177,33 @@ public class URLReader implements AutoCloseable {
 		return coverage;
 	}
 
-	static class IndexEntry {
+	private static class IndexEntry {
 		private final Envelope envelope;
 		private final String filename;
 
-		IndexEntry(Envelope envelope, String filename) {
+		private IndexEntry(Envelope envelope, String filename) {
 			this.envelope = envelope;
 			this.filename = filename;
 		}
 
-		public Envelope getEnvelope() {
+		private Envelope getEnvelope() {
 			return envelope;
 		}
 
-		public String getFilename() {
+		private String getFilename() {
 			return filename;
 		}
 	}
 
-	class FirstEnvelopeFinder implements ItemVisitor {
+	private class FirstEnvelopeFinder implements ItemVisitor {
 		private final Coordinate coordinate;
 		private String firstMatch = null;
 
-		public FirstEnvelopeFinder(Coordinate c) {
+		private FirstEnvelopeFinder(Coordinate c) {
 			coordinate = c;
 		}
 
-		public String getFirstMatch() {
+		private String getFirstMatch() {
 			return firstMatch;
 		}
 
