@@ -32,7 +32,7 @@ import java.util.zip.GZIPInputStream;
  *
  * @author jan
  */
-public class URLReader implements AutoCloseable {
+public class URLReader implements DemReader {
 	private static final Logger logger = LoggerFactory.getLogger(URLReader.class);
 	private static final double TOLERANCE = 0.000001;
 	private final URL demSourceBase;
@@ -74,6 +74,7 @@ public class URLReader implements AutoCloseable {
 	 * @param c a coordinate
 	 * @return the elevation value or {@link Double#NaN} if no data is available
 	 */
+	@Override
 	public double getValueAt(@Nonnull Coordinate c) {
 		String filename = getCoverageFilename(c);
 		if(filename == null) {
@@ -129,7 +130,7 @@ public class URLReader implements AutoCloseable {
 		return coverage;
 	}
 
-	private static double extractValue(@Nonnull Coordinate c, @Nonnull GridCoverage2D coverage) {
+	static double extractValue(@Nonnull Coordinate c, @Nonnull GridCoverage2D coverage) {
 		Point2D.Double p = new Point2D.Double(c.x, c.y);
 		double[] r = new double[1];
 		try {
@@ -164,7 +165,7 @@ public class URLReader implements AutoCloseable {
 		openReaders.values().forEach(reader -> reader.dispose(true));
 	}
 
-	private static GridCoverage2D openReader(File f) throws IOException {
+	synchronized static GridCoverage2D openReader(File f) throws IOException {
 		GeoTiffReader reader = new GeoTiffReader(f);
 
 		GridCoverage2D c = reader.read(null);
