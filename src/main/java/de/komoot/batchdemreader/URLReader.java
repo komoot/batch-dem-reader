@@ -103,28 +103,36 @@ public class URLReader implements DemReader {
         GridCoverage2D coverage = openReaders.get(filename);
         if (coverage == null) {
             String extractedFilename = filename.replace(".bz2", "");
-            File temp = new File(cacheDirectory, extractedFilename);
-            if (temp.exists() == false) {
-                try (InputStream in = new URL(demSourceBase, filename).openStream();
-                     OutputStream out = new FileOutputStream(temp)) {
-                    logger.info("Downloading {}/{}", demSourceBase, filename);
-                    IOUtils.copy(new BZip2CompressorInputStream(in), out);
-                } catch (MalformedURLException e) {
-                    throw new RuntimeException("Could not open source url" + filename, e);
-                } catch (FileNotFoundException e) {
-                    throw new RuntimeException("Could not open temp file " + temp, e);
+            File localCachedFile = new File(cacheDirectory, extractedFilename);
+            if (localCachedFile.exists() == false) {
+                try (InputStream in = new URL(demSourceBase, filename).openStream()) {
+                    File downloadFile = new File(cacheDirectory, extractedFilename + ".download");
+                    try (OutputStream out = new FileOutputStream(downloadFile)) {
+                        logger.info("Downloading {}/{}", demSourceBase, filename);
+                        IOUtils.copy(new BZip2CompressorInputStream(in), out);
+                        // rename after extracting. We don't want to leave broken files here.
+                        boolean success = downloadFile.renameTo(localCachedFile);
+                        if(!success) {
+                            downloadFile.delete();
+                            throw new RuntimeException("Unable to rename " + downloadFile + " to " + localCachedFile);
+                        }
+                    } catch (FileNotFoundException e) {
+                        throw new RuntimeException("Could not open temp file " + downloadFile, e);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Could not open or write " + filename, e);
+                    }
                 } catch (IOException e) {
-                    throw new RuntimeException("Could not open or write " + filename, e);
+                    throw new RuntimeException("Could not open source url" + filename, e);
                 }
             }
             //open previously extracted file
 
             try {
-                logger.debug("Opening reader {}", temp);
-                coverage = openReader(temp);
+                logger.debug("Opening reader {}", localCachedFile);
+                coverage = openReader(localCachedFile);
                 openReaders.put(filename, coverage);
             } catch (IOException e) {
-                throw new RuntimeException("Could not open file " + temp, e);
+                throw new RuntimeException("Could not open file " + localCachedFile, e);
             }
         }
         return coverage;
