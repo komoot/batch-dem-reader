@@ -33,189 +33,189 @@ import java.util.zip.GZIPInputStream;
  * @author jan
  */
 public class URLReader implements DemReader {
-	private static final Logger logger = LoggerFactory.getLogger(URLReader.class);
-	private static final double TOLERANCE = 0.000001;
-	private final URL demSourceBase;
-	private final File cacheDirectory;
-	private final Map<String, GridCoverage2D> openReaders = new ConcurrentHashMap<>();
-	private final Striped<Lock> filenameLock = Striped.lock(1000);
-	private STRtree index = new STRtree();
+    private static final Logger logger = LoggerFactory.getLogger(URLReader.class);
+    private static final double TOLERANCE = 0.000001;
+    private final URL demSourceBase;
+    private final File cacheDirectory;
+    private final Map<String, GridCoverage2D> openReaders = new ConcurrentHashMap<>();
+    private final Striped<Lock> filenameLock = Striped.lock(1000);
+    private STRtree index = new STRtree();
 
-	/**
-	 * Creates a new reader using the given cache directory
-	 *
-	 * @param demSourceBase  source url of the DEM files
-	 * @param cacheDirectory local cache directory
-	 * @throws IOException
-	 */
-	public URLReader(URL demSourceBase, File cacheDirectory) throws IOException {
-		this.demSourceBase = demSourceBase;
-		this.cacheDirectory = cacheDirectory;
-		this.cacheDirectory.mkdir();
+    /**
+     * Creates a new reader using the given cache directory
+     *
+     * @param demSourceBase  source url of the DEM files
+     * @param cacheDirectory local cache directory
+     * @throws IOException
+     */
+    public URLReader(URL demSourceBase, File cacheDirectory) throws IOException {
+        this.demSourceBase = demSourceBase;
+        this.cacheDirectory = cacheDirectory;
+        this.cacheDirectory.mkdir();
 
-		try(InputStream stream = new GZIPInputStream(new URL(demSourceBase, "index.list.gz").openStream())) {
-			populateIndex(stream);
-		}
-	}
+        try (InputStream stream = new GZIPInputStream(new URL(demSourceBase, "index.list.gz").openStream())) {
+            populateIndex(stream);
+        }
+    }
 
-	/**
-	 * Creates a new reader using the system temp directory as cache.
-	 *
-	 * @param demSourceBase source url of the DEM files
-	 * @throws IOException
-	 */
-	public URLReader(URL demSourceBase) throws IOException {
-		this(demSourceBase, new File(System.getProperty("java.io.tmpdir"), "dem"));
-	}
+    /**
+     * Creates a new reader using the system temp directory as cache.
+     *
+     * @param demSourceBase source url of the DEM files
+     * @throws IOException
+     */
+    public URLReader(URL demSourceBase) throws IOException {
+        this(demSourceBase, new File(System.getProperty("java.io.tmpdir"), "dem"));
+    }
 
-	/**
-	 * Reads the value at the given coordinate.
-	 *
-	 * @param c a coordinate
-	 * @return the elevation value or {@link Double#NaN} if no data is available
-	 */
-	@Override
-	public double getValueAt(@Nonnull Coordinate c) {
-		String filename = getCoverageFilename(c);
-		if(filename == null) {
-			return Double.NaN;
-		}
+    /**
+     * Reads the value at the given coordinate.
+     *
+     * @param c a coordinate
+     * @return the elevation value or {@link Double#NaN} if no data is available
+     */
+    @Override
+    public double getValueAt(@Nonnull Coordinate c) {
+        String filename = getCoverageFilename(c);
+        if (filename == null) {
+            return Double.NaN;
+        }
 
-		Lock lock = filenameLock.get(filename);
-		try {
-			lock.lock();
-			GridCoverage2D coverage = findCoverage(filename);
-			return extractValue(c, coverage);
-		} finally {
-			lock.unlock();
-		}
-	}
+        Lock lock = filenameLock.get(filename);
+        try {
+            lock.lock();
+            GridCoverage2D coverage = findCoverage(filename);
+            return extractValue(c, coverage);
+        } finally {
+            lock.unlock();
+        }
+    }
 
-	@Nullable
-	private String getCoverageFilename(@Nonnull Coordinate c) {
-		FirstEnvelopeFinder fmf = new FirstEnvelopeFinder(c);
-		index.query(new Envelope(c), fmf);
-		return fmf.getFirstMatch();
-	}
+    @Nullable
+    private String getCoverageFilename(@Nonnull Coordinate c) {
+        FirstEnvelopeFinder fmf = new FirstEnvelopeFinder(c);
+        index.query(new Envelope(c), fmf);
+        return fmf.getFirstMatch();
+    }
 
-	@Nonnull
-	private GridCoverage2D findCoverage(@Nonnull String filename) {
-		GridCoverage2D coverage = openReaders.get(filename);
-		if(coverage == null) {
-			String extractedFilename = filename.replace(".bz2", "");
-			File temp = new File(cacheDirectory, extractedFilename);
-			if(temp.exists() == false) {
-				try(InputStream in = new URL(demSourceBase, filename).openStream();
-					OutputStream out = new FileOutputStream(temp)) {
-					logger.info("Downloading {}/{}", demSourceBase, filename);
-					IOUtils.copy(new BZip2CompressorInputStream(in), out);
-				} catch(MalformedURLException e) {
-					throw new RuntimeException("Could not open source url" + filename, e);
-				} catch(FileNotFoundException e) {
-					throw new RuntimeException("Could not open temp file " + temp, e);
-				} catch(IOException e) {
-					throw new RuntimeException("Could not open or write " + filename, e);
-				}
-			}
-			//open previously extracted file
+    @Nonnull
+    private GridCoverage2D findCoverage(@Nonnull String filename) {
+        GridCoverage2D coverage = openReaders.get(filename);
+        if (coverage == null) {
+            String extractedFilename = filename.replace(".bz2", "");
+            File temp = new File(cacheDirectory, extractedFilename);
+            if (temp.exists() == false) {
+                try (InputStream in = new URL(demSourceBase, filename).openStream();
+                     OutputStream out = new FileOutputStream(temp)) {
+                    logger.info("Downloading {}/{}", demSourceBase, filename);
+                    IOUtils.copy(new BZip2CompressorInputStream(in), out);
+                } catch (MalformedURLException e) {
+                    throw new RuntimeException("Could not open source url" + filename, e);
+                } catch (FileNotFoundException e) {
+                    throw new RuntimeException("Could not open temp file " + temp, e);
+                } catch (IOException e) {
+                    throw new RuntimeException("Could not open or write " + filename, e);
+                }
+            }
+            //open previously extracted file
 
-			try {
-				logger.debug("Opening reader {}", temp);
-				coverage = openReader(temp);
-				openReaders.put(filename, coverage);
-			} catch(IOException e) {
-				throw new RuntimeException("Could not open file " + temp, e);
-			}
-		}
-		return coverage;
-	}
+            try {
+                logger.debug("Opening reader {}", temp);
+                coverage = openReader(temp);
+                openReaders.put(filename, coverage);
+            } catch (IOException e) {
+                throw new RuntimeException("Could not open file " + temp, e);
+            }
+        }
+        return coverage;
+    }
 
-	static double extractValue(@Nonnull Coordinate c, @Nonnull GridCoverage2D coverage) {
-		Point2D.Double p = new Point2D.Double(c.x, c.y);
-		double[] r = new double[1];
-		try {
-			return coverage.evaluate(p, r)[0];
-		} catch(PointOutsideCoverageException e) {
-			throw new RuntimeException(String.format(Locale.US, "For %s (%s) (%f,%f): %s", coverage.getName(), coverage.getEnvelope(), c.x, c.y, e.getMessage()), e);
-		}
-	}
+    static double extractValue(@Nonnull Coordinate c, @Nonnull GridCoverage2D coverage) {
+        Point2D.Double p = new Point2D.Double(c.x, c.y);
+        double[] r = new double[1];
+        try {
+            return coverage.evaluate(p, r)[0];
+        } catch (PointOutsideCoverageException e) {
+            throw new RuntimeException(String.format(Locale.US, "For %s (%s) (%f,%f): %s", coverage.getName(), coverage.getEnvelope(), c.x, c.y, e.getMessage()), e);
+        }
+    }
 
-	private void populateIndex(InputStream stream) throws IOException {
-		BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
-		String line;
-		while((line = reader.readLine()) != null) {
-			if(line.startsWith("#") == false) {
-				String[] parts = line.split(",");
-				if(parts.length >= 5) {
-					String filename = parts[0];
-					double minx = Double.parseDouble(parts[1]) + TOLERANCE;
-					double miny = Double.parseDouble(parts[2]) - TOLERANCE;
-					double maxx = Double.parseDouble(parts[3]) + TOLERANCE;
-					double maxy = Double.parseDouble(parts[4]) - TOLERANCE;
-					Envelope e = new Envelope(minx, maxx, miny, maxy);
-					index.insert(e, new IndexEntry(e, filename));
-				}
-			}
-		}
-		index.build();
-	}
+    private void populateIndex(InputStream stream) throws IOException {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
+        String line;
+        while ((line = reader.readLine()) != null) {
+            if (line.startsWith("#") == false) {
+                String[] parts = line.split(",");
+                if (parts.length >= 5) {
+                    String filename = parts[0];
+                    double minx = Double.parseDouble(parts[1]) + TOLERANCE;
+                    double miny = Double.parseDouble(parts[2]) - TOLERANCE;
+                    double maxx = Double.parseDouble(parts[3]) + TOLERANCE;
+                    double maxy = Double.parseDouble(parts[4]) - TOLERANCE;
+                    Envelope e = new Envelope(minx, maxx, miny, maxy);
+                    index.insert(e, new IndexEntry(e, filename));
+                }
+            }
+        }
+        index.build();
+    }
 
-	@Override
-	public void close() throws Exception {
-		openReaders.values().forEach(reader -> reader.dispose(true));
-	}
+    @Override
+    public void close() throws Exception {
+        openReaders.values().forEach(reader -> reader.dispose(true));
+    }
 
-	synchronized static GridCoverage2D openReader(File f) throws IOException {
-		GeoTiffReader reader = new GeoTiffReader(f);
+    synchronized static GridCoverage2D openReader(File f) throws IOException {
+        GeoTiffReader reader = new GeoTiffReader(f);
 
-		GridCoverage2D c = reader.read(null);
-		GridCoverage2D coverage = Interpolator2D.create(c, Interpolation.getInstance(Interpolation.INTERP_BILINEAR));
+        GridCoverage2D c = reader.read(null);
+        GridCoverage2D coverage = Interpolator2D.create(c, Interpolation.getInstance(Interpolation.INTERP_BILINEAR));
 
-		int dims = coverage.getNumSampleDimensions();
-		if(dims != 1) {
-			throw new IOException("Given coverage has " + dims + " dimensions but elevation data should have only one!");
-		}
-		return coverage;
-	}
+        int dims = coverage.getNumSampleDimensions();
+        if (dims != 1) {
+            throw new IOException("Given coverage has " + dims + " dimensions but elevation data should have only one!");
+        }
+        return coverage;
+    }
 
-	private static class IndexEntry {
-		private final Envelope envelope;
-		private final String filename;
+    private static class IndexEntry {
+        private final Envelope envelope;
+        private final String filename;
 
-		private IndexEntry(Envelope envelope, String filename) {
-			this.envelope = envelope;
-			this.filename = filename;
-		}
+        private IndexEntry(Envelope envelope, String filename) {
+            this.envelope = envelope;
+            this.filename = filename;
+        }
 
-		private Envelope getEnvelope() {
-			return envelope;
-		}
+        private Envelope getEnvelope() {
+            return envelope;
+        }
 
-		private String getFilename() {
-			return filename;
-		}
-	}
+        private String getFilename() {
+            return filename;
+        }
+    }
 
-	private class FirstEnvelopeFinder implements ItemVisitor {
-		private final Coordinate coordinate;
-		private String firstMatch = null;
+    private class FirstEnvelopeFinder implements ItemVisitor {
+        private final Coordinate coordinate;
+        private String firstMatch = null;
 
-		private FirstEnvelopeFinder(Coordinate c) {
-			coordinate = c;
-		}
+        private FirstEnvelopeFinder(Coordinate c) {
+            coordinate = c;
+        }
 
-		private String getFirstMatch() {
-			return firstMatch;
-		}
+        private String getFirstMatch() {
+            return firstMatch;
+        }
 
-		@Override
-		public void visitItem(Object item) {
-			if(firstMatch == null) {
-				IndexEntry ie = (IndexEntry) item;
-				if(ie.getEnvelope().contains(coordinate)) {
-					firstMatch = ie.getFilename();
-				}
-			}
-		}
-	}
+        @Override
+        public void visitItem(Object item) {
+            if (firstMatch == null) {
+                IndexEntry ie = (IndexEntry) item;
+                if (ie.getEnvelope().contains(coordinate)) {
+                    firstMatch = ie.getFilename();
+                }
+            }
+        }
+    }
 }
