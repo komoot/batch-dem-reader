@@ -19,9 +19,9 @@
             <url>https://maven.pkg.github.com/komoot/komoot-master</url>
         </repository>
         <repository>
-            <id>geomajas</id>
-            <name>geomajas</name>
-            <url>https://maven.geomajas.org</url>
+            <id>os-geo</id>
+            <name>os-geo</name>
+            <url>https://download.osgeo.org/webdav/geotools</url>
         </repository>
     </repositories>
 
@@ -34,7 +34,7 @@
         <dependency>
             <groupId>org.geotools</groupId>
             <artifactId>gt-coverage</artifactId>
-            <version>10.4</version>
+            <version>10.5</version>
         </dependency>
         <dependency>
             <groupId>commons-io</groupId>
@@ -49,7 +49,7 @@
         <dependency>
             <groupId>org.geotools</groupId>
             <artifactId>gt-geotiff</artifactId>
-            <version>10.4</version>
+            <version>10.5</version>
         </dependency>
         <dependency>
             <groupId>com.google.code.findbugs</groupId>
@@ -82,7 +82,7 @@
         <dependency>
             <groupId>org.geotools</groupId>
             <artifactId>gt-epsg-wkt</artifactId>
-            <version>10.4</version>
+            <version>10.5</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
