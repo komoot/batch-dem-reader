@@ -1,15 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
         <groupId>de.komoot.master</groupId>
         <artifactId>komoot-source</artifactId>
-        <version>3.17</version>
+        <version>3.20</version>
     </parent>
     <groupId>de.komoot.batch-dem-reader</groupId>
     <artifactId>batch-dem-reader</artifactId>
     <version>1.4-SNAPSHOT</version>
+
+    <repositories>
+        <repository>
+            <id>github-komoot-master</id>
+            <name>github-komoot-master</name>
+            <url>https://maven.pkg.github.com/komoot/komoot-master</url>
+        </repository>
+    </repositories>
 
     <dependencies>
         <dependency>
@@ -108,4 +117,13 @@
         <developerConnection>scm:git:ssh://git@github.com/komoot/batch-dem-reader.git</developerConnection>
         <tag>HEAD</tag>
     </scm>
+
+    <distributionManagement>
+        <repository>
+            <id>github-batch-dem-reader</id>
+            <name>github-batch-dem-reader</name>
+            <url>https://maven.pkg.github.com/komoot/batch-dem-reader</url>
+        </repository>
+    </distributionManagement>
+
 </project>
