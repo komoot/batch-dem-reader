@@ -18,6 +18,11 @@
             <name>github-komoot-master</name>
             <url>https://maven.pkg.github.com/komoot/komoot-master</url>
         </repository>
+        <repository>
+            <id>geomajas</id>
+            <name>geomajas</name>
+            <url>http://maven.geomajas.org</url>
+        </repository>
     </repositories>
 
     <dependencies>
